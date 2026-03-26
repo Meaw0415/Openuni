@@ -13,7 +13,7 @@ prompt_template = dict(
     IMG_START_TOKEN='<img>',
     IMG_END_TOKEN='</img>',
     INSTRUCTION='USER: {input}',
-    GENERATION='ASSISTANT: {output}',
+    GENERATION='Generate an image: {input}',
     CFG='')
 
 image_size = 512

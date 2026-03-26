@@ -301,3 +301,54 @@ class OpenUniLLaVASANAHF(BaseModel):
         while len(sigma.shape) < n_dim:
             sigma = sigma.unsqueeze(-1)
         return sigma
+
+    @torch.no_grad()
+    def get_semantic_features(self, pixel_values):
+        pixel_values = (pixel_values + 1.0) / 2
+        pixel_values = pixel_values - self.vit_mean.view(1, 3, 1, 1)
+        pixel_values = pixel_values / self.vit_std.view(1, 3, 1, 1)
+        pixel_values = F.interpolate(pixel_values, size=(self.vit_input_size, self.vit_input_size), mode='bilinear')
+        vit_embeds = self.lmm.vision_tower(pixel_values, output_hidden_states=True)
+        vit_embeds = vit_embeds.hidden_states[-1]
+        vit_embeds = self.lmm.multi_modal_projector(vit_embeds)
+        return vit_embeds
+
+    def image2image_loss(self, data_dict):
+        pixel_values_src = data_dict['pixel_values_src'].to(dtype=self.dtype, device=self.device)
+        vit_embeds = self.get_semantic_features(pixel_values_src)
+        vit_embeds.requires_grad = True
+
+        pixel_values = data_dict['pixel_values'].to(dtype=self.dtype, device=self.device)
+        image_latents = self.pixels_to_latents(pixel_values)
+
+        b, _, height, weight = image_latents.shape
+
+        input_ids = data_dict['input_ids'].to(self.device)
+        attention_mask = data_dict['attention_mask'].to(self.device)
+
+        inputs_embeds = vit_embeds.new_zeros(*input_ids.shape, self.llm.config.hidden_size)
+        inputs_embeds[input_ids == self.image_token_id] = vit_embeds.flatten(0, 1)
+        inputs_embeds[input_ids != self.image_token_id] = self.llm.get_input_embeddings()(
+            input_ids[input_ids != self.image_token_id]
+        )
+
+        max_length = self.max_length
+        if inputs_embeds.shape[1] > max_length:
+            inputs_embeds = inputs_embeds[:, -max_length:]
+            attention_mask = attention_mask[:, -max_length:]
+
+        hidden_states = self.meta_queries[None].expand(b, self.num_queries, -1)
+
+        inputs = self.prepare_forward_input(x=hidden_states,
+                                            inputs_embeds=inputs_embeds,
+                                            attention_mask=attention_mask)
+
+        output = self.llm.model(**inputs, return_dict=True)
+        hidden_states = output.last_hidden_state[:, -self.num_queries:]
+        hidden_states = self.llm2dit(hidden_states)
+
+        loss_diff = self.diff_loss(model_input=image_latents,
+                                   prompt_embeds=hidden_states,
+                                   prompt_attention_mask=None)
+
+        return loss_diff
