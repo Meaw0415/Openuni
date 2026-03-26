@@ -127,3 +127,8 @@ batchscript-*
 *.pdf
 checkpoints/
 output/
+
+# Test files and directories
+test_*.py
+sana_*_test/
+v2/

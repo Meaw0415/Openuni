@@ -1,6 +1,6 @@
 from mmengine.config import read_base
 from mmengine.dataset import InfiniteSampler
-from src.datasets.collate_functions import collate_func_gen
+from src.datasets.collate_functions import collate_func_gen_latents
 from src.datasets.text2image.caption_datasets import CaptionDataset
 
 
@@ -11,10 +11,9 @@ max_length = 128
 
 dataset = dict(type=CaptionDataset,
                image_size=image_size,
-               cap_source='caption',
-               cap_folder='data/laion6m/raw',
-               data_path='data/laion6m/data.json',
-               image_folder='data/laion6m/raw',
+               cap_folder='data/cc12m/captions',
+               data_path='data/cc12m/data.json',
+               image_latents_folder=f'data/cc12m/raw_dc32_{image_size}',
                unconditional=0.1,
                prompt_template=prompt_template,
                ceph_folder=None,
@@ -28,6 +27,6 @@ train_dataloader = dict(
     pin_memory=True,
     dataset=dataset,
     sampler=dict(type=InfiniteSampler, shuffle=True),
-    collate_fn=dict(type=collate_func_gen,
+    collate_fn=dict(type=collate_func_gen_latents,
                     pad_index=pad_index)
 )
